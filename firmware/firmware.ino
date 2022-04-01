@@ -11,8 +11,8 @@ Adafruit_PM25AQI aqi = Adafruit_PM25AQI();
 int sda_pin = 8; // GPIO16 as I2C SDA
 int scl_pin = 9; // GPIO17 as I2C SCL
 
-//#include <SensirionI2CScd4x.h> //SCD
-//SensirionI2CScd4x scd4x;
+#include <SensirionI2CScd4x.h> //SCD
+SensirionI2CScd4x scd4x;
 
 Scheduler userScheduler; // to control your personal task
 painlessMesh  mesh;
@@ -23,6 +23,8 @@ void sendMessage() ; // Prototype so PlatformIO doesn't complain
 Task taskSendMessage( TASK_SECOND * 1 , TASK_FOREVER, &sendMessage );
 
 void sendMessage() {
+
+  //Reading PM sensor data
   PM25_AQI_Data data;
   if (! aqi.read(&data)) {
     Serial.println("Could not read from AQI");
@@ -50,7 +52,24 @@ void sendMessage() {
   doc["Particles > 5.0um / 0.1L air:"] = data.particles_50um;
   doc["Particles > 10um / 0.1L air:"] = data.particles_100um;
 
-// TO DO: Add all reading from SCD sensor and format JSON
+  //SDC Sensor data
+    uint16_t co2;
+    float temperature;
+    float humidity;
+    uint16_t error;
+    char errorMessage[256];
+    error = scd4x.readMeasurement(co2, temperature, humidity);
+    if (error) {
+        Serial.print("Error trying to execute readMeasurement(): ");
+        errorToString(error, errorMessage, 256);
+        Serial.println(errorMessage);
+    } else if (co2 == 0) {
+        Serial.println("Invalid sample detected, skipping.");
+    } else {
+        doc["Co2"] = co2;
+        doc["Temperature"] = temperature;
+        doc["Humidity"] = humidity;
+    }
 
   String payload;
   Serial.printf("Sending data over mesh \n");
@@ -106,6 +125,52 @@ void setupPMSensor(){
     while (10) delay(1);
   }
   Serial.println("PM25 found!"); 
+
+    uint16_t error;
+    char errorMessage[256];
+  scd4x.begin(Wire);
+  // stop potentially previously started measurement
+  error = scd4x.stopPeriodicMeasurement();
+  if (error) {
+    Serial.print("Error trying to execute stopPeriodicMeasurement(): ");
+    errorToString(error, errorMessage, 256);
+    Serial.println(errorMessage);
+  }
+    uint16_t serial0;
+    uint16_t serial1;
+    uint16_t serial2;
+    error = scd4x.getSerialNumber(serial0, serial1, serial2);
+    if (error) {
+        Serial.print("Error trying to execute getSerialNumber(): ");
+        errorToString(error, errorMessage, 256);
+        Serial.println(errorMessage);
+    } else {
+        printSerialNumber(serial0, serial1, serial2);
+    }
+
+    // Start Measurement
+    error = scd4x.startPeriodicMeasurement();
+    if (error) {
+        Serial.print("Error trying to execute startPeriodicMeasurement(): ");
+        errorToString(error, errorMessage, 256);
+        Serial.println(errorMessage);
+    }
+
+}
+
+void printUint16Hex(uint16_t value) {
+    Serial.print(value < 4096 ? "0" : "");
+    Serial.print(value < 256 ? "0" : "");
+    Serial.print(value < 16 ? "0" : "");
+    Serial.print(value, HEX);
+}
+
+void printSerialNumber(uint16_t serial0, uint16_t serial1, uint16_t serial2) {
+    Serial.print("Serial: 0x");
+    printUint16Hex(serial0);
+    printUint16Hex(serial1);
+    printUint16Hex(serial2);
+    Serial.println();
 }
 
   
